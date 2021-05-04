@@ -6,8 +6,12 @@ from utils import get_model_attr, calculate_model_losses, tensor_aug
 from collections import defaultdict
 import math
 
+from torch.utils.tensorboard import SummaryWriter
 
 def main(args):
+    # tensorboard
+    writer = SummaryWriter()
+
     vocab, train_loader, val_loader = build_loaders(args)
     model, model_kwargs = build_model(args, vocab)
     print(model)
@@ -87,6 +91,8 @@ def main(args):
                 print("On batch {} out of {}".format(t, args.num_iterations))
                 for name, val in losses.items():
                     print(' [%s]: %.4f' % (name, val))
+                    writer.add_scalar('Loss/'+ name, val, t)
+
                     checkpoint['losses'][name].append(val)
                 checkpoint['losses_ts'].append(t)
 
@@ -112,6 +118,8 @@ def main(args):
                     if k not in key_blacklist:
                         small_checkpoint[k] = v
                 torch.save(small_checkpoint, checkpoint_path)
+    
+    writer.close()
 
 if __name__ == '__main__':
     args = Options().parse()

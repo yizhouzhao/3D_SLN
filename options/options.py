@@ -6,6 +6,9 @@ CHECKPOINT_DIR = './checkpoints'
 TEST_DIR = './layouts_out'
 SUNCG_DIR = '/data/vision/billf/jwu-phys/dataset/billf-10/SceneRGBD/SUNCG'
 os.environ["SUNCG_DIR"] = SUNCG_DIR
+
+from IPython import get_ipython
+
 class Options():
 
     def __init__(self):
@@ -32,7 +35,7 @@ class Options():
         parser.add_argument('--layout_noise_dim', default=32, type=int)
 
         parser.add_argument('--batch_size', default=128, type=int)
-        parser.add_argument('--num_iterations', default=600000, type=int)
+        parser.add_argument('--num_iterations', default=60000, type=int)
         parser.add_argument('--eval_mode_after', default=-1, type=int)
         parser.add_argument('--learning_rate', default=1e-4, type=float)
 
@@ -74,7 +77,10 @@ class Options():
         # initialize parser
         if not self.initialized:
             self.initialize()
-        self.opt = self.parser.parse_args()
+        if get_ipython().__class__.__name__ == 'ZMQInteractiveShell':
+            self.opt = self.parser.parse_args("")
+        else:
+            self.opt = self.parser.parse_args()
 
         if self.opt.manual_seed is not None:
             torch.manual_seed(self.opt.manual_seed)
