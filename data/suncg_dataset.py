@@ -5,6 +5,10 @@ from torch.utils.data import Dataset
 from data.base_dataset import BaseDataset
 from utils import load_json, compute_rel
 
+import pickle
+import networkx
+import numpy as np
+
 class SuncgDataset(BaseDataset):
     def __init__(self, data_dir, train_3d, touching_relations=True, use_attr_30=False):
         super(Dataset, self).__init__()
@@ -85,6 +89,8 @@ class SuncgDataset(BaseDataset):
             "metadata/size_info_many.json")
         self.size_data_30 = load_json(
             "metadata/30_size_info_many.json")
+
+        self.relation_score_matrix = self.get_relation_score_matrix()
 
     def total_objects(self):
         total_objs = 0
@@ -192,7 +198,12 @@ class SuncgDataset(BaseDataset):
             # add random relationships
             for cur in real_objs:
                 choices = [obj for obj in real_objs if obj != cur]
-                other = random.choice(choices)
+                # ---------- new ---------------
+                prob = [self.relation_score_matrix[objs[cur], objs[otr]] for otr in real_objs if otr != cur]
+                prob = np.asarray(prob) / np.sum(prob)
+
+                #other = random.choice(choices)
+                other = np.random.choice(choices, p = prob)
                 if random.random() > 0.5:
                     s, o = cur, other
                 else:
@@ -290,6 +301,49 @@ class SuncgDataset(BaseDataset):
 
         assert attributes.size(0) == objs.size(0)
         return room_id, objs, boxes, triples, angles, attributes
+
+    # -------------------new------------------
+    def get_relation_score_matrix(self, path = "new/relation_graph_v1.p"):
+        vocab = self.vocab
+
+        print("loading relation score matrix from: ", path)
+        R_G = pickle.load(open(path,"rb"))
+
+        relation_score_matrix = np.zeros((len(vocab['object_idx_to_name']), len(vocab['object_idx_to_name']))) + 0.1
+        for i in range(len(vocab['object_idx_to_name'])):
+            obj1 = vocab['object_idx_to_name'][i]
+            
+            if obj1 == "shower_curtain":
+                continue
+            if obj1 == "floor_mat":
+                obj1 = "floor"
+            if obj1 == "night_stand":
+                obj1 = "stand"
+            
+            if obj1 not in R_G.nodes:
+                continue
+            
+            max_count_obj = max([R_G.edges[edge]['count'] for edge in R_G.edges(obj1)])
+            
+            for j in range(len(vocab['object_idx_to_name'])):  
+                obj2 = vocab['object_idx_to_name'][j]
+                
+                if obj2 == "shower_curtain":
+                    continue
+                if obj2 == "floor_mat":
+                    obj2 = "floor"
+                if obj2 == "night_stand":
+                    obj2 = "stand"
+                
+                if obj2 not in R_G.nodes:
+                    continue
+                
+                if (obj1, obj2) not in R_G.edges:
+                    continue
+            
+                relation_score_matrix[i][j] += np.log(R_G.edges[(obj1, obj2)]["count"]) / np.log(max_count_obj)
+
+        return relation_score_matrix
 
 
 def suncg_collate_fn(batch):
