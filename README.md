@@ -1,3 +1,16 @@
+# New model [May 2021]
+
+## 1. Importance sampling from SceneGraphNet
+
+After getting the metadata parsed from ![SceneGraphNet](https://github.com/yzhou359/3DIndoor-SceneGraphNet), the relation calculation only occurs in the same level of objects/furniture, (e.g. **Bed vs Table** instead of *Bed vs Bread*)
+
+Use the *scenegraphnet.ipynb* to get the pickled graph data, which indicates the weights of sampling relations. In *suncg_dataset.py*, the sampling process uses the importance sampling to generate relations.
+
+![Relation IS](runs/relation_is.png)
+
+
+
+
 # End-to-End Optimization of Scene Layout
 
 ![Teaser Image](https://raw.githubusercontent.com/aluo-x/3D_SLN/master/result.jpg)
