@@ -4,7 +4,7 @@ from utils import int_tuple, float_tuple, str_tuple, bool_flag
 import os
 CHECKPOINT_DIR = './checkpoints'
 TEST_DIR = './layouts_out'
-SUNCG_DIR = '/data/vision/billf/jwu-phys/dataset/billf-10/SceneRGBD/SUNCG'
+SUNCG_DIR = '/home/yizhou/Research/SUNCG/suncg_data'
 os.environ["SUNCG_DIR"] = SUNCG_DIR
 
 from IPython import get_ipython
@@ -69,7 +69,7 @@ class Options():
         parser.add_argument('--draw_3d', action='store_true')
         parser.add_argument('--fine_tune', action='store_true')
         parser.add_argument('--gan_shade', action='store_true')
-        parser.add_argument('--blender_path', default="/data/vision/billf/mooncam/code/yonglong/blender")
+        parser.add_argument('--blender_path', default="/home/yizhou/blender-2.92.0-linux64/blender")
 
 
 

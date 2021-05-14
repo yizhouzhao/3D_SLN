@@ -118,7 +118,7 @@ def add_light_area(xyz=(0, 0, 0), rot_vec_rad=(0, 0, 0), name=None, energy=100, 
     if (np.abs(rot_vec_rad) > 2 * np.pi).any():
         logging.warning("%s: Some input value falls outside [-2pi, 2pi]. Sure inputs are in radians?", thisfunc)
 
-    bpy.ops.object.lamp_add(type='AREA', location=xyz, rotation=rot_vec_rad)
+    bpy.ops.object.light_add(type='AREA', location=xyz, rotation=rot_vec_rad)
     area = bpy.context.active_object
 
     if name is not None:
@@ -129,7 +129,8 @@ def add_light_area(xyz=(0, 0, 0), rot_vec_rad=(0, 0, 0), name=None, energy=100, 
     # Strength
     engine = bpy.data.scenes['Scene'].render.engine
     if engine == 'CYCLES':
-        area.data.node_tree.nodes['Emission'].inputs[1].default_value = energy
+        pass
+        #area.data.node_tree.nodes['Emission'].inputs[1].default_value = energy
     else:
         raise NotImplementedError(engine)
 

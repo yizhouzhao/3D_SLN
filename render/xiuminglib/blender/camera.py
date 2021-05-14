@@ -406,7 +406,7 @@ def get_camera_zbuffer(cam, save_to=None, hide=None):
         outpath = save_to[:-4]
 
     # Duplicate scene to avoid touching the original scene
-    bpy.ops.scene.new(type='LINK_OBJECTS')
+    bpy.ops.scene.new(type='LINK_COPY')
 
     scene = bpy.context.scene
     scene.camera = cam
@@ -455,7 +455,8 @@ def get_camera_zbuffer(cam, save_to=None, hide=None):
                 obj.hide_render = orig_hide_render[obj.name]
 
     # Load z-buffer as array
-    exr_path = outpath + '%04d' % scene.frame_current + '.exr'
+    exr_path = outpath + '%04d' % 1 + '.exr'
+    #print("scene.frame_current----------------------", scene.frame_current)
     im = cv2.imread(exr_path, cv2.IMREAD_UNCHANGED)
     assert (np.array_equal(im[:, :, 0], im[:, :, 1]) and np.array_equal(im[:, :, 0], im[:, :, 2])), \
         "BGR channels of the z-buffer should be all the same, but they are not"

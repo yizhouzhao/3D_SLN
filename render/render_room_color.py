@@ -94,7 +94,7 @@ def assign_texture(obj, source="GAN", sample=True, img_dir=None):
         for node in nodes:
             nodes.remove(node)
 
-        texture = mat.active_texture
+        texture = None #mat.texture_slots.texture
 
         if texture is not None:
             # get texture image name
@@ -126,8 +126,12 @@ def assign_texture(obj, source="GAN", sample=True, img_dir=None):
     # node_tree.nodes['Diffuse BSDF'].inputs[1].default_value = roughness
 
     # Scene update necessary, as matrix_world is updated lazily
-    scene = bpy.context.scene
-    scene.update()
+    #scene = bpy.context.scene
+    #scene.update()
+
+    # Update view layer
+    layer = bpy.context.view_layer
+    layer.update()
 
 
 def assign_texture_scene(room_objs, walls, floor, ceiling, option="original"):
@@ -180,13 +184,20 @@ def render_test(objs, boxes, angles, out_path, name="", triples=None, dataset="s
     # scene initialization
     # reset_blend()
     bpy.ops.wm.read_factory_settings()
+    #scene = bpy.context.scene
     scene = bpy.context.scene
     scene.render.filepath = out_path
     mainfile_path = "./mainfile"
     for obj in bpy.data.objects:
-        obj.select = True
+        obj.select_set(state=True)
     bpy.ops.object.delete()
-    scene.update()
+    #scene.update()
+
+    # Update view layer
+    layer = bpy.context.view_layer
+    layer.update()
+
+
     world = bpy.data.worlds.new(name="World")
     set_cycles(n_samples=50)
     scene.render.resolution_x = 512
@@ -270,7 +281,7 @@ def render_test(objs, boxes, angles, out_path, name="", triples=None, dataset="s
     objs = import_object(model_path, rot_mat=rot, trans_vec=trans, scale=1, name="wall")
     for obj in objs:
         # get rid of front wall, as well as walls inside room
-        scene.objects.active = obj
+        bpy.context.view_layer.objects.active = obj
         bpy.ops.object.mode_set(mode='EDIT')
         me = obj.data
         bm = bmesh.from_edit_mesh(me)
@@ -279,7 +290,7 @@ def render_test(objs, boxes, angles, out_path, name="", triples=None, dataset="s
         total = 0
         for v in bm.verts:
             total += 1
-            v_scene = obj.matrix_world * v.co
+            v_scene = obj.matrix_world @ v.co
             # print(v_scene[2]/room_bbox[2],v_scene[0]/room_bbox[0])
 
             # if v_scene[2] > 0.9 * room_bbox[2]:
@@ -292,13 +303,14 @@ def render_test(objs, boxes, angles, out_path, name="", triples=None, dataset="s
         if score / len(bm.verts) > 0.7:
             verts = bm.verts
         # print(len(verts))
-        bmesh.ops.delete(bm, geom=verts, context=1)
+        bmesh.ops.delete(bm, geom=verts, context='VERTS')
         bmesh.update_edit_mesh(me)
         bpy.ops.object.mode_set(mode='OBJECT')
 
     walls = objs
 
-    bpy.context.scene.update()
+    #bpy.context.scene.update()
+    layer.update()
 
     # add floor
     floor_bbox = np.array(boxes[-1][3:])
@@ -319,7 +331,9 @@ def render_test(objs, boxes, angles, out_path, name="", triples=None, dataset="s
 
     floor = obj
 
-    bpy.context.scene.update()
+    #bpy.context.scene.update()
+
+    layer.update()
 
     # add ceiling
     ceiling_bbox = np.array(boxes[-1][3:])
@@ -342,7 +356,8 @@ def render_test(objs, boxes, angles, out_path, name="", triples=None, dataset="s
 
     ceiling = obj
 
-    bpy.context.scene.update()
+    # bpy.context.scene.update()
+    layer.update()
 
     # start viewpoint sampling
     scene.render.resolution_x = 1024

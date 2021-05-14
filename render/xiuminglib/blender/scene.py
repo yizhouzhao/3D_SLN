@@ -86,8 +86,8 @@ def set_cycles(w=None, h=None,
         cycles.film_transparent = transp_bg
 
     # Use GPU
-    bpy.context.user_preferences.addons['cycles'].preferences.compute_device_type = 'CUDA'
-    bpy.context.user_preferences.addons['cycles'].preferences.compute_device = 'CUDA_0'
+    bpy.context.preferences.addons['cycles'].preferences.compute_device_type = 'CUDA'
+    bpy.context.preferences.addons['cycles'].preferences.compute_device = 'CUDA_0'
     # bpy.context.user_preferences.system.compute_device_type = 'CUDA'
     # bpy.context.user_preferences.system.compute_device = 'CUDA_' + '0'
     scene.cycles.device = 'GPU'
