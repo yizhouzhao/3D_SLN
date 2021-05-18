@@ -34,7 +34,7 @@ class Options():
         parser.add_argument('--vec_noise_dim', default=0, type=int)
         parser.add_argument('--layout_noise_dim', default=32, type=int)
 
-        parser.add_argument('--batch_size', default=128, type=int)
+        parser.add_argument('--batch_size', default=16, type=int)
         parser.add_argument('--num_iterations', default=60000, type=int)
         parser.add_argument('--eval_mode_after', default=-1, type=int)
         parser.add_argument('--learning_rate', default=1e-4, type=float)

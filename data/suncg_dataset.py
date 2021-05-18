@@ -154,22 +154,22 @@ class SuncgDataset(BaseDataset):
         # Angles are discrete, so make it a long tensor
         angles = torch.LongTensor(angles)
 
-        # Compute centers of all objects
-        obj_centers = []
-        if self.train_3d:
-            for i, obj_idx in enumerate(objs):
-                x0, y0, z0, x1, y1, z1 = boxes[i]
-                mean_x = 0.5 * (x0 + x1)
-                mean_y = 0.5 * (y0 + y1)
-                mean_z = 0.5 * (z0 + z1)
-                obj_centers.append([mean_x, mean_y, mean_z])
-        else:
-            for i, obj_idx in enumerate(objs):
-                x0, z0, x1, z1 = boxes[i]
-                mean_x = 0.5 * (x0 + x1)
-                mean_z = 0.5 * (z0 + z1)
-                obj_centers.append([mean_x, mean_z])
-        obj_centers = torch.FloatTensor(obj_centers)
+        # # Compute centers of all objects
+        # obj_centers = []
+        # if self.train_3d:
+        #     for i, obj_idx in enumerate(objs):
+        #         x0, y0, z0, x1, y1, z1 = boxes[i]
+        #         mean_x = 0.5 * (x0 + x1)
+        #         mean_y = 0.5 * (y0 + y1)
+        #         mean_z = 0.5 * (z0 + z1)
+        #         obj_centers.append([mean_x, mean_y, mean_z])
+        # else:
+        #     for i, obj_idx in enumerate(objs):
+        #         x0, z0, x1, z1 = boxes[i]
+        #         mean_x = 0.5 * (x0 + x1)
+        #         mean_z = 0.5 * (z0 + z1)
+        #         obj_centers.append([mean_x, mean_z])
+        # obj_centers = torch.FloatTensor(obj_centers)
 
         # Compute scene graphs
         triples = []
