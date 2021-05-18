@@ -141,3 +141,6 @@ metadata/
 runs/
 3dp/
 layouts_out/
+
+#
+nohup.out
