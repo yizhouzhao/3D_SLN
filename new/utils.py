@@ -4,7 +4,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 from torch_geometric.data import Data, Batch
 
-def new_collate_fn(batch):
+def new_collate_fn(batch, collect_graph = False):
     all_mask = [] # attention mask
     all_objs = []
     all_boxes = []
@@ -30,5 +30,6 @@ def new_collate_fn(batch):
     pad_all_angles = pad_sequence(all_angles, padding_value=0, batch_first=True) # [B x O]
 
     graph_batch = Batch.from_data_list(all_graph_data)
+    # graph_batch = None
 
     return (pad_all_objs, pad_all_boxes, pad_all_angles, pad_all_mask), graph_batch

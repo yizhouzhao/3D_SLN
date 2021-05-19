@@ -94,13 +94,21 @@ class GGenerator(nn.Module):
 
         return output, hx
 
-class GraphEncoder(nn.Module):
-    def __init__(self, gconv_type="gconv", obj_embedding_dim=168, out_channels=64, num_relations=16):
+class TDecoder(nn.Module):
+    def __init__(self, gconv_type="RGCNConv", obj_embedding_dim=168, out_channels=64, num_relations=16):
         super().__init__()
-
         num_objs = 32
 
-        ## embeddings
+        ## networks
+        self.obj_embeddings = nn.Embedding(num_objs + 1, obj_embedding_dim)
+        self.gconv = RGCNConv(obj_embedding_dim, out_channels, num_relations)
+
+class GraphEncoder(nn.Module):
+    def __init__(self, gconv_type="RGCNConv", obj_embedding_dim=168, out_channels=64, num_relations=16):
+        super().__init__()
+        num_objs = 32
+
+        ## networks
         self.obj_embeddings = nn.Embedding(num_objs + 1, obj_embedding_dim)
         self.gconv = RGCNConv(obj_embedding_dim, out_channels, num_relations)
 
