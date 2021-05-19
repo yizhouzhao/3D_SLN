@@ -4,7 +4,6 @@ from torch.nn.utils.rnn import pad_sequence
 
 from torch_geometric.data import Data, Batch
 
-
 def new_collate_fn(batch):
     all_mask = [] # attention mask
     all_objs = []

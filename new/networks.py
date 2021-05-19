@@ -76,7 +76,7 @@ class GGenerator(nn.Module):
         self.mlp = make_mlp([Z_dim, hidden_dim], activation="none")
         self.rnn_cell = nn.GRUCell(input_size, hidden_dim)
         self.out = nn.Sequential(
-            nn.Linear(hidden_dim, vocab_size),
+            nn.Linear(hidden_dim, vocab_size + 1),
             #nn.LogSoftmax(dim=-1),
         )
 

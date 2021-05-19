@@ -113,10 +113,13 @@ class SuncgDataset(BaseDataset):
             idx = 0
         return self.__getitem__(idx)
 
-    def __getitem__(self, index):
+    def __getitem__(self, index, shuffle_obj = True):
         room_id = self.room_ids[index]
         objs, boxes, angles = [], [], []
-        for object_data in self.image_id_to_objects[room_id]:
+        obj_data_list = self.image_id_to_objects[room_id]
+        if shuffle_obj:
+            random.shuffle(obj_data_list)
+        for object_data in obj_data_list:
             obj_type = object_data["type"]
             objs.append(self.vocab['object_name_to_idx'][obj_type])
             bbox = object_data['new_bbox']
