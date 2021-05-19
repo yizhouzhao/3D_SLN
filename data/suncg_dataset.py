@@ -312,7 +312,7 @@ class SuncgDataset(BaseDataset):
         print("loading relation score matrix from: ", path)
         R_G = pickle.load(open(path,"rb"))
 
-        relation_score_matrix = np.zeros((len(vocab['object_idx_to_name']), len(vocab['object_idx_to_name']))) + 0.5
+        relation_score_matrix = np.zeros((len(vocab['object_idx_to_name']), len(vocab['object_idx_to_name']))) + 0.6
         for i in range(len(vocab['object_idx_to_name'])):
             obj1 = vocab['object_idx_to_name'][i]
             
