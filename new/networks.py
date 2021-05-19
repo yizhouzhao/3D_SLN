@@ -5,6 +5,9 @@ from transformers.models.bert.modeling_bert import BertEncoder, BertPooler
 
 from models.graph import make_mlp
 
+from torch_geometric.nn import RGCNConv
+from torch_scatter import scatter_mean
+
 def sample_z(mu, log_var, batch_size = 16, Z_dim = 10):
     # Using reparameterization trick to sample from a gaussian
     eps = torch.randn(batch_size, Z_dim).to(mu.device)
@@ -12,7 +15,7 @@ def sample_z(mu, log_var, batch_size = 16, Z_dim = 10):
 
 class TEncoder(nn.Module):
     def __init__(self, 
-        embedding_dim,
+        embedding_dim = 168,
         Z_dim = 10, # hidden representation size
         Nangle = 24,
     ):
@@ -68,13 +71,17 @@ class TEncoder(nn.Module):
         return mean, log_var
 
 class GGenerator(nn.Module):
-    def __init__(self, input_size,  Z_dim = 10, vocab_size = 32):
+    def __init__(self, input_size,  hidden_dim = 64, vocab_size = 32, Z_dim = 10):
         super().__init__()
-        self.rnn_cell = nn.GRUCell(input_size, Z_dim)
+        self.mlp = make_mlp([Z_dim, hidden_dim], activation="none")
+        self.rnn_cell = nn.GRUCell(input_size, hidden_dim)
         self.out = nn.Sequential(
-            nn.Linear(Z_dim, vocab_size),
-            nn.LogSoftmax(dim=-1),
+            nn.Linear(hidden_dim, vocab_size),
+            #nn.LogSoftmax(dim=-1),
         )
+
+    def init_hidden_states(self, z):
+        return self.mlp(z)
 
     def forward(self, x, hx):
         '''
@@ -88,5 +95,19 @@ class GGenerator(nn.Module):
         return output, hx
 
 class GraphEncoder(nn.Module):
-    def __init__(self, in_channels, out_channels, num_relations):
+    def __init__(self, gconv_type="gconv", obj_embedding_dim=168, out_channels=64, num_relations=16):
         super().__init__()
+
+        num_objs = 32
+
+        ## embeddings
+        self.obj_embeddings = nn.Embedding(num_objs + 1, obj_embedding_dim)
+        self.gconv = RGCNConv(obj_embedding_dim, out_channels, num_relations)
+
+    def forward(self, batch):
+        x_embed = self.obj_embeddings(batch.x)
+        rgcn_out = self.gconv(x_embed.squeeze(1), batch.edge_index, edge_type = batch.edge_attr.flatten().long())
+        pool_out = scatter_mean(rgcn_out, batch.batch, dim = 0)
+
+        return pool_out # global average pooling 
+
