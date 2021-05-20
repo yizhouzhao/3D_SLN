@@ -39,12 +39,11 @@ optimizer = torch.optim.Adam(ovaed.parameters(), lr=args.learning_rate)
 t = 0 # total steps
 
 for epoch in range(5):
-    print("Trainaing epoch {}".format(epoch))
+    print("Training epoch {}".format(epoch))
     # training
     ovaed.train()
     for batch in tqdm(train_loader):
         t += 1
-        
         ids, objs, boxes, triples, angles, attributes, obj_to_img, triple_to_img = tensor_aug(batch)
         z = torch.randn(objs.size(0), 64).to(objs.device)
         boxes_pred, angles_pred = ovaed.decoder(z, objs, triples, attributes)
@@ -63,6 +62,7 @@ for epoch in range(5):
 
     # validation
     ovaed.eval()
+    print("Validation epoch {}".format(epoch))
     valid_loss_list = {"bbox_pred":[], "angle_pred": []}
     for batch in tqdm(val_loader):        
         ids, objs, boxes, triples, angles, attributes, obj_to_img, triple_to_img = tensor_aug(batch)
@@ -74,9 +74,10 @@ for epoch in range(5):
         #if t % args.print_every == 0:
         #    print("On batch {} out of {}".format(t, args.num_iterations))
         for name, val in losses.items():
-            valid_loss_list[name].append(val.item())
+            valid_loss_list[name].append(val)
 
         for name, val_list in valid_loss_list.items():
             writer.add_scalar('Loss/Validation_'+ name, np.mean(val_list), epoch)
+            print("Validation loss", name, np.mean(val_list))
     
         

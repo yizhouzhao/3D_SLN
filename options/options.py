@@ -23,7 +23,7 @@ class Options():
         parser.add_argument('--suncg_val_dir', default="metadata/data_rot_val.json")
         parser.add_argument('--suncg_data_dir', default=SUNCG_DIR)
 
-        parser.add_argument('--loader_num_workers', default=8, type=int)
+        parser.add_argument('--loader_num_workers', default=1, type=int)
         parser.add_argument('--embedding_dim', default=64, type=int)
         parser.add_argument('--gconv_mode', default='feedforward')
         parser.add_argument('--gconv_dim', default=128, type=int)
