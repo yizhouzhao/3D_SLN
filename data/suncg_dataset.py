@@ -9,6 +9,54 @@ import pickle
 import networkx
 import numpy as np
 
+g_use_heuristic_relation_matrix = True
+g_add_in_room_relation = False
+
+def suncg_collate_fn(batch):
+    """
+    Collate function to be used when wrapping SuncgDataset in a
+    DataLoader. Returns a tuple of the following:
+
+    - objs: LongTensor of shape (O,) giving object categories
+    - boxes: FloatTensor of shape (O, 4)
+    - triples: LongTensor of shape (T, 3) giving triples
+    - obj_to_img: LongTensor of shape (O,) mapping objects to room
+    - triple_to_img: LongTensor of shape (T,) mapping triples to room
+    """
+    all_ids, all_objs, all_boxes, all_triples, all_angles, all_attributes = [], [], [], [], [], []
+    all_obj_to_room, all_triple_to_room = [], []
+    obj_offset = 0
+    for i, (room_id, objs, boxes, triples, angles, attributes) in enumerate(batch):
+        if objs.dim() == 0 or triples.dim() == 0:
+            continue
+        O, T = objs.size(0), triples.size(0)
+        all_objs.append(objs)
+        all_angles.append(angles)
+        all_attributes.append(attributes)
+        all_boxes.append(boxes)
+        all_ids.append(room_id)
+        triples = triples.clone()
+        triples[:, 0] += obj_offset
+        triples[:, 2] += obj_offset
+        all_triples.append(triples)
+
+        all_obj_to_room.append(torch.LongTensor(O).fill_(i))
+        all_triple_to_room.append(torch.LongTensor(T).fill_(i))
+        obj_offset += O
+
+    all_ids = torch.LongTensor(all_ids)
+    all_objs = torch.cat(all_objs)
+    all_boxes = torch.cat(all_boxes)
+    all_triples = torch.cat(all_triples)
+    all_angles = torch.cat(all_angles)
+    all_attributes = torch.cat(all_attributes)
+    all_obj_to_room = torch.cat(all_obj_to_room)
+    all_triple_to_room = torch.cat(all_triple_to_room)
+
+    out = (all_ids, all_objs, all_boxes, all_triples, all_angles, all_attributes, all_obj_to_room, all_triple_to_room)
+    return out
+
+
 class SuncgDataset(BaseDataset):
     def __init__(self, data_dir, train_3d, touching_relations=True, use_attr_30=False):
         super(Dataset, self).__init__()
@@ -90,7 +138,8 @@ class SuncgDataset(BaseDataset):
         self.size_data_30 = load_json(
             "metadata/30_size_info_many.json")
 
-        self.relation_score_matrix = self.get_relation_score_matrix()
+        if g_use_heuristic_relation_matrix:
+            self.relation_score_matrix = self.get_relation_score_matrix()
 
     def total_objects(self):
         total_objs = 0
@@ -112,6 +161,50 @@ class SuncgDataset(BaseDataset):
             print("Get by room id failed! Defaulting to 0.")
             idx = 0
         return self.__getitem__(idx)
+
+    
+    # -------------------new------------------
+    def get_relation_score_matrix(self, path = "new/relation_graph_v1.p"):
+        vocab = self.vocab
+
+        print("loading relation score matrix from: ", path)
+        R_G = pickle.load(open(path,"rb"))
+
+        relation_score_matrix = np.zeros((len(vocab['object_idx_to_name']), len(vocab['object_idx_to_name']))) + 0.6
+        for i in range(len(vocab['object_idx_to_name'])):
+            obj1 = vocab['object_idx_to_name'][i]
+            
+            if obj1 == "shower_curtain":
+                continue
+            if obj1 == "floor_mat":
+                obj1 = "floor"
+            if obj1 == "night_stand":
+                obj1 = "stand"
+            
+            if obj1 not in R_G.nodes:
+                continue
+            
+            max_count_obj = max([R_G.edges[edge]['count'] for edge in R_G.edges(obj1)])
+            
+            for j in range(len(vocab['object_idx_to_name'])):  
+                obj2 = vocab['object_idx_to_name'][j]
+                
+                if obj2 == "shower_curtain":
+                    continue
+                if obj2 == "floor_mat":
+                    obj2 = "floor"
+                if obj2 == "night_stand":
+                    obj2 = "stand"
+                
+                if obj2 not in R_G.nodes:
+                    continue
+                
+                if (obj1, obj2) not in R_G.edges:
+                    continue
+            
+                relation_score_matrix[i][j] += np.log(R_G.edges[(obj1, obj2)]["count"]) / np.log(max_count_obj)
+
+        return relation_score_matrix
 
     def __getitem__(self, index, shuffle_obj = True):
         room_id = self.room_ids[index]
@@ -202,11 +295,13 @@ class SuncgDataset(BaseDataset):
             for cur in real_objs:
                 choices = [obj for obj in real_objs if obj != cur]
                 # ---------- new ---------------
-                prob = [self.relation_score_matrix[objs[cur], objs[otr]] for otr in real_objs if otr != cur]
-                prob = np.asarray(prob) / np.sum(prob)
-
-                #other = random.choice(choices)
-                other = np.random.choice(choices, p = prob)
+                if g_use_heuristic_relation_matrix:
+                    prob = [self.relation_score_matrix[objs[cur], objs[otr]] for otr in real_objs if otr != cur]
+                    prob = np.asarray(prob) / np.sum(prob)
+                    other = np.random.choice(choices, p = prob)
+                else:
+                    other = random.choice(choices)
+                
                 if random.random() > 0.5:
                     s, o = cur, other
                 else:
@@ -219,11 +314,12 @@ class SuncgDataset(BaseDataset):
                 triples.append([s, p, o])
 
             # Add __in_room__ triples
-            O = objs.size(0)
-            for i in range(O - 1):
-                p = compute_rel(boxes[i], boxes[-1], None, "__room__")
-                p = self.vocab['pred_name_to_idx'][p]
-                triples.append([i, p, O - 1])
+            if g_add_in_room_relation:
+                O = objs.size(0)
+                for i in range(O - 1):
+                    p = compute_rel(boxes[i], boxes[-1], None, "__room__")
+                    p = self.vocab['pred_name_to_idx'][p]
+                    triples.append([i, p, O - 1])
 
         triples = torch.LongTensor(triples)
 
@@ -305,90 +401,4 @@ class SuncgDataset(BaseDataset):
         assert attributes.size(0) == objs.size(0)
         return room_id, objs, boxes, triples, angles, attributes
 
-    # -------------------new------------------
-    def get_relation_score_matrix(self, path = "new/relation_graph_v1.p"):
-        vocab = self.vocab
 
-        print("loading relation score matrix from: ", path)
-        R_G = pickle.load(open(path,"rb"))
-
-        relation_score_matrix = np.zeros((len(vocab['object_idx_to_name']), len(vocab['object_idx_to_name']))) + 0.6
-        for i in range(len(vocab['object_idx_to_name'])):
-            obj1 = vocab['object_idx_to_name'][i]
-            
-            if obj1 == "shower_curtain":
-                continue
-            if obj1 == "floor_mat":
-                obj1 = "floor"
-            if obj1 == "night_stand":
-                obj1 = "stand"
-            
-            if obj1 not in R_G.nodes:
-                continue
-            
-            max_count_obj = max([R_G.edges[edge]['count'] for edge in R_G.edges(obj1)])
-            
-            for j in range(len(vocab['object_idx_to_name'])):  
-                obj2 = vocab['object_idx_to_name'][j]
-                
-                if obj2 == "shower_curtain":
-                    continue
-                if obj2 == "floor_mat":
-                    obj2 = "floor"
-                if obj2 == "night_stand":
-                    obj2 = "stand"
-                
-                if obj2 not in R_G.nodes:
-                    continue
-                
-                if (obj1, obj2) not in R_G.edges:
-                    continue
-            
-                relation_score_matrix[i][j] += np.log(R_G.edges[(obj1, obj2)]["count"]) / np.log(max_count_obj)
-
-        return relation_score_matrix
-
-
-def suncg_collate_fn(batch):
-    """
-    Collate function to be used when wrapping SuncgDataset in a
-    DataLoader. Returns a tuple of the following:
-
-    - objs: LongTensor of shape (O,) giving object categories
-    - boxes: FloatTensor of shape (O, 4)
-    - triples: LongTensor of shape (T, 3) giving triples
-    - obj_to_img: LongTensor of shape (O,) mapping objects to room
-    - triple_to_img: LongTensor of shape (T,) mapping triples to room
-    """
-    all_ids, all_objs, all_boxes, all_triples, all_angles, all_attributes = [], [], [], [], [], []
-    all_obj_to_room, all_triple_to_room = [], []
-    obj_offset = 0
-    for i, (room_id, objs, boxes, triples, angles, attributes) in enumerate(batch):
-        if objs.dim() == 0 or triples.dim() == 0:
-            continue
-        O, T = objs.size(0), triples.size(0)
-        all_objs.append(objs)
-        all_angles.append(angles)
-        all_attributes.append(attributes)
-        all_boxes.append(boxes)
-        all_ids.append(room_id)
-        triples = triples.clone()
-        triples[:, 0] += obj_offset
-        triples[:, 2] += obj_offset
-        all_triples.append(triples)
-
-        all_obj_to_room.append(torch.LongTensor(O).fill_(i))
-        all_triple_to_room.append(torch.LongTensor(T).fill_(i))
-        obj_offset += O
-
-    all_ids = torch.LongTensor(all_ids)
-    all_objs = torch.cat(all_objs)
-    all_boxes = torch.cat(all_boxes)
-    all_triples = torch.cat(all_triples)
-    all_angles = torch.cat(all_angles)
-    all_attributes = torch.cat(all_attributes)
-    all_obj_to_room = torch.cat(all_obj_to_room)
-    all_triple_to_room = torch.cat(all_triple_to_room)
-
-    out = (all_ids, all_objs, all_boxes, all_triples, all_angles, all_attributes, all_obj_to_room, all_triple_to_room)
-    return out

@@ -158,17 +158,17 @@ class RGCNDecoder(nn.Module):
         if gconv_num_layers > 0:
             gconv_kwargs_dc = {
                 'input_dim': gconv_dim,
-                'hidden_dim': gconv_hidden_dim,
-                'pooling': gconv_pooling,
+                #'hidden_dim': gconv_hidden_dim,
+                #'pooling': gconv_pooling,
                 'num_layers': gconv_num_layers,
-                'mode': gconv_mode,
-                'mlp_normalization': mlp_normalization,
+                #'mode': gconv_mode,
+                #'mlp_normalization': mlp_normalization,
             }
             if self.decoder_cat:
                 gconv_kwargs_dc['input_dim'] = gconv_dim * 2
             self.gconv_net_dc = nn.ModuleList()
             for j in range(gconv_num_layers):
-                self.gconv_net_dc.append(RGCNConv(gconv_dim, gconv_dim, num_relations=16))
+                self.gconv_net_dc.append(RGCNConv(gconv_kwargs_dc['input_dim'] , gconv_kwargs_dc['input_dim'] , num_relations=16))
 
         # box prediction net
         if self.train_3d:
@@ -200,6 +200,8 @@ class RGCNDecoder(nn.Module):
         if self.decoder_cat:
             obj_vecs = torch.cat([obj_vecs, z], dim=1)
             for j in range(len(self.gconv_net_dc)):
+                print(j, "obj_vecs", obj_vecs.shape)
+                print("edges", edges.shape)
                 obj_vecs = self.gconv_net_dc[j](obj_vecs, edges, edge_type = p)
                 obj_vecs = torch.relu(obj_vecs)
 
