@@ -13,11 +13,12 @@ import numpy as np
 from new.CustomVAE import *
 from new.utils import resolve_relative_positions
 from utils import calculate_model_losses
-from data.suncg_dataset import g_add_in_room_relation, g_use_heuristic_relation_matrix
+from data.suncg_dataset import g_add_in_room_relation, g_use_heuristic_relation_matrix, g_prepend_room, g_add_random_parent_link
 
 # decoder option
 g_decoder_option = "rgcn"
 g_relative_location = "true"
+g_parent_link_index = 16
 
 args = Options().parse()
 if (args.output_dir is not None) and (not os.path.isdir(args.output_dir)):
@@ -32,11 +33,13 @@ args.use_AE = True
 writer = SummaryWriter()
 
 writer.add_hparams({
-    "experiment type": "Decoder Only",
+    "experiment type": "Decoder update: add random parent link for relative position calculation",
     "decoder type": g_decoder_option,
     "use relative location": g_relative_location,
     "Add 'in_room' relation": g_add_in_room_relation,
     "Use heuristic relation matrix": g_use_heuristic_relation_matrix,
+    "prepend/append room info": g_prepend_room,
+    "add random parent link": g_add_random_parent_link,
 }, {"NA": 0})
 
 # load data
@@ -81,7 +84,7 @@ for epoch in range(5):
         boxes_pred, angles_pred = model.decoder(z, objs, triples, attributes)
         
         if g_relative_location:
-            boxes_pred = resolve_relative_positions(boxes_pred, triples)
+            boxes_pred = resolve_relative_positions(boxes_pred, triples, g_parent_link_index)
 
         total_loss, losses = calculate_model_losses(args, model, boxes_pred, boxes, angles, angles_pred)
         
@@ -105,7 +108,7 @@ for epoch in range(5):
         boxes_pred, angles_pred = model.decoder(z, objs, triples, attributes)
         
         if g_relative_location:
-            boxes_pred = resolve_relative_positions(boxes_pred, triples)
+            boxes_pred = resolve_relative_positions(boxes_pred, triples, g_parent_link_index)
 
         total_loss, losses = calculate_model_losses(args, model, boxes_pred, boxes, angles, angles_pred)
         

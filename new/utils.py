@@ -35,10 +35,10 @@ def new_collate_fn(batch, collect_graph = False):
     return (pad_all_objs, pad_all_boxes, pad_all_angles, pad_all_mask), graph_batch
 
 
-def resolve_relative_positions(boxes_pred, triples, parent_relation_type_index = 15):
+def resolve_relative_positions(boxes_pred, triples, parent_relation_type_index = 16):
     '''
     Calculate obj absolute position based on relative boxes_pred
-    parent_relation_type_index: "on":15
+    parent_relation_type_index: "on":15, "parent" 16
     '''
     s, p, o = triples.chunk(3, dim=1)  # All have shape (T, 1)
     s, p, o = [x.squeeze(1) for x in [s, p, o]]  # Now have shape (T,)

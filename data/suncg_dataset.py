@@ -11,6 +11,8 @@ import numpy as np
 
 g_use_heuristic_relation_matrix = True
 g_add_in_room_relation = False
+g_add_random_parent_link = False
+g_prepend_room = False
 
 def suncg_collate_fn(batch):
     """
@@ -209,6 +211,22 @@ class SuncgDataset(BaseDataset):
     def __getitem__(self, index, shuffle_obj = True):
         room_id = self.room_ids[index]
         objs, boxes, angles = [], [], []
+
+        if g_prepend_room:
+            objs.append(self.vocab['object_name_to_idx']['__room__'])
+            room_bbox = self.room_bboxes[room_id]
+            x0 = 0.0
+            y0 = 0.0
+            z0 = 0.0
+            x1 = room_bbox[0]
+            y1 = room_bbox[1]
+            z1 = room_bbox[2]
+            if self.train_3d:
+                boxes.append(torch.FloatTensor([x0, y0, z0, x1, y1, z1]))
+            else:
+                boxes.append(torch.FloatTensor([x0, z0, x1, z1]))
+            angles.append(0)
+
         obj_data_list = self.image_id_to_objects[room_id]
         if shuffle_obj:
             random.shuffle(obj_data_list)
@@ -231,19 +249,20 @@ class SuncgDataset(BaseDataset):
             theta = object_data['rotation']
             angles.append(theta)
 
-        objs.append(self.vocab['object_name_to_idx']['__room__'])
-        room_bbox = self.room_bboxes[room_id]
-        x0 = 0.0
-        y0 = 0.0
-        z0 = 0.0
-        x1 = room_bbox[0]
-        y1 = room_bbox[1]
-        z1 = room_bbox[2]
-        if self.train_3d:
-            boxes.append(torch.FloatTensor([x0, y0, z0, x1, y1, z1]))
-        else:
-            boxes.append(torch.FloatTensor([x0, z0, x1, z1]))
-        angles.append(0)
+        if not g_prepend_room:
+            objs.append(self.vocab['object_name_to_idx']['__room__'])
+            room_bbox = self.room_bboxes[room_id]
+            x0 = 0.0
+            y0 = 0.0
+            z0 = 0.0
+            x1 = room_bbox[0]
+            y1 = room_bbox[1]
+            z1 = room_bbox[2]
+            if self.train_3d:
+                boxes.append(torch.FloatTensor([x0, y0, z0, x1, y1, z1]))
+            else:
+                boxes.append(torch.FloatTensor([x0, z0, x1, z1]))
+            angles.append(0)
 
         objs = torch.LongTensor(objs)
         boxes = torch.stack(boxes, dim=0)
@@ -290,28 +309,59 @@ class SuncgDataset(BaseDataset):
                         p = self.vocab['pred_name_to_idx']['on']
                         triples.append([cur, p, other])
                         on_rels[cur].append(other)
+            
+            # new: add random parent link
+            if g_add_random_parent_link:
+                for cur in real_objs:
+                    if cur in on_rels.keys():
+                        # "on" relation is an absolute parent link
+                        choices = on_rels[cur]
+                        other = random.choice(choices)
+                        p = len(self.vocab['pred_name_to_idx']) # 16: parent link
+                        triples.append([cur, p, other])
+                    else:
+                        # random choose a parent
+                        choices = [obj for obj in real_objs if obj != cur]
+                        if g_prepend_room:
+                            choices.append(0)
+                        else:
+                            choices.append(objs.size(0)- 1)
+                        other = random.choice(choices)
 
-            # add random relationships
-            for cur in real_objs:
-                choices = [obj for obj in real_objs if obj != cur]
-                # ---------- new ---------------
-                if g_use_heuristic_relation_matrix:
-                    prob = [self.relation_score_matrix[objs[cur], objs[otr]] for otr in real_objs if otr != cur]
-                    prob = np.asarray(prob) / np.sum(prob)
-                    other = np.random.choice(choices, p = prob)
-                else:
-                    other = random.choice(choices)
-                
-                if random.random() > 0.5:
-                    s, o = cur, other
-                else:
-                    s, o = other, cur
-                if s in on_rels[o] or o in on_rels[s]:
-                    continue
+                        if (g_prepend_room and other == 0) or (not g_prepend_room and other == objs.size(0)- 1):
+                            p = self.vocab['pred_name_to_idx']["__in_room__"]
+                            triples.append([cur, p, other])
+                        else:
+                            # real relation
+                            p = compute_rel(boxes[cur], boxes[other], None, None)
+                            p = self.vocab['pred_name_to_idx'][p]
+                            triples.append([cur, p, other])
 
-                p = compute_rel(boxes[s], boxes[o], None, None)
-                p = self.vocab['pred_name_to_idx'][p]
-                triples.append([s, p, o])
+                            # add parent link
+                            triples.append([cur, len(self.vocab['pred_name_to_idx']), other])
+      
+            else:
+                # add random relationships
+                for cur in real_objs:
+                    choices = [obj for obj in real_objs if obj != cur]
+                    # ---------- new ---------------
+                    if g_use_heuristic_relation_matrix:
+                        prob = [self.relation_score_matrix[objs[cur], objs[otr]] for otr in real_objs if otr != cur]
+                        prob = np.asarray(prob) / np.sum(prob)
+                        other = np.random.choice(choices, p = prob)
+                    else:
+                        other = random.choice(choices)
+                    
+                    if random.random() > 0.5:
+                        s, o = cur, other
+                    else:
+                        s, o = other, cur
+                    if s in on_rels[o] or o in on_rels[s]:
+                        continue
+
+                    p = compute_rel(boxes[s], boxes[o], None, None)
+                    p = self.vocab['pred_name_to_idx'][p]
+                    triples.append([s, p, o])
 
             # Add __in_room__ triples
             if g_add_in_room_relation:
