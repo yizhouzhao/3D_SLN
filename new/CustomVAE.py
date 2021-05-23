@@ -5,6 +5,10 @@ from models.graph import make_mlp, GraphTripleConvNet, _init_weights
 
 from torch_geometric.nn import RGCNConv
 
+from transformers import BertModel, BertConfig
+from transformers.models.bert.modeling_bert import BertEncoder, BertPooler
+
+
 class OriVAEDecoder(nn.Module):
     def __init__(self, vocab, embedding_dim=128, batch_size=32,
                  train_3d=True,
@@ -321,3 +325,92 @@ class OriVAEEncoder(nn.Module):
         mu = torch.cat([mu_box, mu_angle], dim=1)
         logvar = torch.cat([logvar_box, logvar_angle], dim=1)
         return mu, logvar
+
+
+class TransformerEncoder(nn.Module):
+    def __init__(self, vocab, embedding_dim=128, batch_size=32,
+                 train_3d=True,
+                 decoder_cat=False,
+                 Nangle=24,
+                 gconv_mode='feedforward',
+                 gconv_pooling='avg', gconv_num_layers=5,
+                 mlp_normalization='none',
+                 vec_noise_dim=0,
+                 layout_noise_dim=0,
+                 use_AE=False,
+                 use_attr=True):
+        super().__init__()
+        gconv_dim = embedding_dim
+        gconv_hidden_dim = gconv_dim * 4
+        box_embedding_dim = int(embedding_dim * 3 / 4)
+        angle_embedding_dim = int(embedding_dim / 4)
+        attr_embedding_dim = 0
+        obj_embedding_dim = embedding_dim
+
+        self.use_attr = use_attr
+        self.batch_size = batch_size
+        self.train_3d = train_3d
+        self.decoder_cat = decoder_cat
+        self.vocab = vocab
+        self.vec_noise_dim = vec_noise_dim
+        self.layout_noise_dim = layout_noise_dim
+        self.use_AE = use_AE
+
+        if self.use_attr:
+            obj_embedding_dim = int(embedding_dim * 3 / 4)
+            attr_embedding_dim = int(embedding_dim / 4)
+
+        num_objs = len(vocab['object_idx_to_name'])
+        num_preds = len(vocab['pred_idx_to_name'])
+        num_attrs = len(vocab['attrib_idx_to_name'])
+
+        # making nets
+        self.obj_embeddings_ec = nn.Embedding(num_objs + 1, obj_embedding_dim)
+        if use_attr:
+            self.attr_embedding_ec = nn.Embedding(num_attrs, attr_embedding_dim)
+        if self.train_3d:
+            self.box_embeddings = nn.Linear(6, box_embedding_dim)
+        else:
+            self.box_embeddings = nn.Linear(4, box_embedding_dim)
+        self.angle_embeddings = nn.Embedding(Nangle, angle_embedding_dim)
+
+        ## transformer
+        self.bert_config = BertConfig()
+        self.bert_config.hidden_size = 2 * embedding_dim
+        self.bert_encoder = BertEncoder(self.bert_config)
+       
+        ## linear
+        self.subject_linear = make_mlp([self.bert_config.hidden_size, embedding_dim])
+        self.object_linear = make_mlp([self.bert_config.hidden_size, embedding_dim])
+
+    def encoder(self, objs, boxes_gt, angles_gt, attributes, obj_to_img):
+        obj_vecs = self.obj_embeddings_ec(objs)
+        if self.use_attr:
+            attr_vecs = self.attr_embedding_ec(attributes)
+            obj_vecs = torch.cat([obj_vecs, attr_vecs], dim=1)
+        angle_vecs = self.angle_embeddings(angles_gt)
+        boxes_vecs = self.box_embeddings(boxes_gt)
+
+        obj_vecs = torch.cat([obj_vecs, boxes_vecs, angle_vecs], dim=1) #[B x D]
+        obj_vecs = obj_vecs.unsqueeze(0) # [1xBxD] 
+        
+        # attention mask
+        obj_counts = [torch.sum(obj_to_img == i).item() for i in range(self.batch_size)]
+        block_list = [torch.ones((obj_counts[i],obj_counts[i])) for i in range(self.batch_size)]
+        attention_mask = torch.block_diag(*block_list).to(obj_vecs.device) # [BxB]
+
+        # the attention mask is expand as [1 x 1 x B x B]
+        bert_outputs = self.bert_encoder(obj_vecs, attention_mask=attention_mask[None,None,:,:])[0] # [1 x B x D]
+
+        subject_linear_output = self.subject_linear(bert_outputs) # [1 x B x D']
+        object_linear_output = self.object_linear(bert_outputs) # [1 x B x D']
+
+        subject_linear_output = subject_linear_output.squeeze(0)
+        object_linear_output = object_linear_output.squeeze(0)
+
+        score_matrix = torch.matmul(subject_linear_output, object_linear_output.transpose(0, 1)) * attention_mask
+
+        return score_matrix        
+
+
+
