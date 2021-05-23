@@ -9,7 +9,7 @@ import pickle
 import networkx
 import numpy as np
 
-g_use_heuristic_relation_matrix = True
+g_use_heuristic_relation_matrix = False
 g_add_in_room_relation = False
 g_add_random_parent_link = False
 g_prepend_room = False

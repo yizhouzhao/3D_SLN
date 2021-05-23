@@ -16,8 +16,8 @@ from utils import calculate_model_losses
 from data.suncg_dataset import g_add_in_room_relation, g_use_heuristic_relation_matrix, g_prepend_room, g_add_random_parent_link
 
 # decoder option
-g_decoder_option = "rgcn"
-g_relative_location = "true"
+g_decoder_option = "original" #"rgcn"
+g_relative_location = "False"
 g_parent_link_index = 16
 
 args = Options().parse()
@@ -33,7 +33,7 @@ args.use_AE = True
 writer = SummaryWriter()
 
 writer.add_hparams({
-    "experiment type": "Decoder update: add random parent link for relative position calculation",
+    "experiment type": "Decoder only: original version of the decoder",
     "decoder type": g_decoder_option,
     "use relative location": g_relative_location,
     "Add 'in_room' relation": g_add_in_room_relation,

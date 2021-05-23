@@ -1,6 +1,9 @@
+from logging import log
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions import Categorical
+
 from models.graph import make_mlp, GraphTripleConvNet, _init_weights
 
 from torch_geometric.nn import RGCNConv
@@ -384,6 +387,9 @@ class TransformerEncoder(nn.Module):
         self.object_linear = make_mlp([self.bert_config.hidden_size, embedding_dim])
 
     def encoder(self, objs, boxes_gt, angles_gt, attributes, obj_to_img):
+        '''
+        Get the score matrix for sampling distributions
+        '''
         obj_vecs = self.obj_embeddings_ec(objs)
         if self.use_attr:
             attr_vecs = self.attr_embedding_ec(attributes)
@@ -408,9 +414,38 @@ class TransformerEncoder(nn.Module):
         subject_linear_output = subject_linear_output.squeeze(0)
         object_linear_output = object_linear_output.squeeze(0)
 
-        score_matrix = torch.matmul(subject_linear_output, object_linear_output.transpose(0, 1)) * attention_mask
+        score_matrix = torch.matmul(subject_linear_output, object_linear_output.transpose(0, 1)) 
+        score_matrix = score_matrix - 10000.0 * (1.0 - attention_mask)
 
         return score_matrix        
 
+    def sample(self, score_matrix, obj_to_img):
+        '''
+        Sample the indexes of obj parents from the score matrix
+        '''
+        offset = 0
+        all_samples = []
+        all_log_probs = []
 
+        obj_counts = [torch.sum(obj_to_img == i).item() for i in range(self.batch_size)]
+        for i in range(len(obj_counts)):
+            block_size = obj_counts[i]
+            score_block = score_matrix[offset : offset + block_size, offset : offset + block_size]
+            
+            # get the categorical distribution
+            m_block = Categorical(logits= score_block) 
 
+            # get samples and probs
+            sample_block = m_block.sample()
+            log_prob_block = m_block.log_prob(sample_block)
+            
+            sample_block = sample_block + offset # add offset
+            all_samples.append(sample_block)
+            all_log_probs.append(log_prob_block)
+
+            offset += block_size
+
+        all_samples = torch.cat(all_samples, dim = 0)
+        all_log_probs = torch.cat(all_log_probs, dim = 0)
+        
+        return all_samples, all_log_probs

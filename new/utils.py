@@ -3,6 +3,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 
 from torch_geometric.data import Data, Batch
+from utils import compute_rel
 
 def new_collate_fn(batch, collect_graph = False):
     all_mask = [] # attention mask
@@ -53,3 +54,28 @@ def resolve_relative_positions(boxes_pred, triples, parent_relation_type_index =
                 visited_subject.append(subject_index)
 
     return boxes_pred
+
+def obtain_sampled_relations(objects, sample_parents, boxes, vocab, add_parent_link = False):
+    new_triples = []
+    for i in range(sample_parents.size(0)):
+        # subject = objects[i]
+        parent_index = sample_parents[i]
+        # parent = objects[parent_index]
+        subject_box = boxes[i]
+        parent_box = boxes[parent_index]
+
+        if parent_index == i:
+            # the parent is itself, just put itself in the room
+            name2 = "__room__"
+            p = compute_rel(subject_box, parent_box, None, name2)
+        else:
+            p = compute_rel(subject_box, parent_box, None, None)
+
+        p = vocab['pred_name_to_idx'][p]
+        new_triples.append([i, p, parent_index])
+
+        if add_parent_link:
+            pass
+    
+    new_triples = torch.LongTensor(new_triples).to(objects.device)
+    return new_triples
