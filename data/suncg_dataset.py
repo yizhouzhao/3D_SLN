@@ -13,6 +13,7 @@ g_use_heuristic_relation_matrix = False
 g_add_in_room_relation = False
 g_add_random_parent_link = False
 g_prepend_room = False
+g_shuffle_subject_object = False
 
 def suncg_collate_fn(batch):
     """
@@ -352,7 +353,7 @@ class SuncgDataset(BaseDataset):
                     else:
                         other = random.choice(choices)
                     
-                    if random.random() > 0.5:
+                    if g_shuffle_subject_object and random.random() > 0.5:
                         s, o = cur, other
                     else:
                         s, o = other, cur

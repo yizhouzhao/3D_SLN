@@ -13,7 +13,8 @@ import numpy as np
 from new.CustomVAE import *
 from new.utils import resolve_relative_positions
 from utils import calculate_model_losses
-from data.suncg_dataset import g_add_in_room_relation, g_use_heuristic_relation_matrix, g_prepend_room, g_add_random_parent_link
+from data.suncg_dataset import g_add_in_room_relation, g_use_heuristic_relation_matrix, \
+    g_prepend_room, g_add_random_parent_link, g_shuffle_subject_object
 
 # decoder option
 g_decoder_option = "original" #"rgcn"
@@ -40,6 +41,7 @@ writer.add_hparams({
     "Use heuristic relation matrix": g_use_heuristic_relation_matrix,
     "prepend/append room info": g_prepend_room,
     "add random parent link": g_add_random_parent_link,
+    "shuffle object/subject when loading data": g_shuffle_subject_object,
 }, {"NA": 0})
 
 # load data
@@ -63,17 +65,20 @@ kwargs = {
     }
 
 # load decoder
-if g_decoder_option == "rgcn":
-    model = OriVAEDecoder(dt.vocab, embedding_dim=64)
-else:
+if g_decoder_option == "original":
+    model = OriVAEDecoder(**kwargs)
+elif g_decoder_option == "rgcn":
     model = RGCNConv(**kwargs)
+else:
+    raise("MODEL MISSING {}".format(g_decoder_option))
 model = model.cuda()
 
 optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
 t = 0 # total steps
+total_epochs = 5
 
-for epoch in range(5):
+for epoch in range(total_epochs):
     print("Training epoch {}".format(epoch))
     # training
     model.train()

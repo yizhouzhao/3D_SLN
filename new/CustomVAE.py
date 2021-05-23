@@ -382,11 +382,18 @@ class TransformerEncoder(nn.Module):
         self.bert_config.hidden_size = 2 * embedding_dim
         self.bert_encoder = BertEncoder(self.bert_config)
        
-        ## linear
-        self.subject_linear = make_mlp([self.bert_config.hidden_size, embedding_dim])
-        self.object_linear = make_mlp([self.bert_config.hidden_size, embedding_dim])
+        ## latent representation
+        self.box_mean_var = make_mlp([embedding_dim * 2, gconv_hidden_dim, embedding_dim * 2],
+                                     batch_norm=mlp_normalization)
+        self.box_mean = make_mlp([embedding_dim * 2, box_embedding_dim], batch_norm=mlp_normalization, norelu=True)
+        self.box_var = make_mlp([embedding_dim * 2, box_embedding_dim], batch_norm=mlp_normalization, norelu=True)
+        self.angle_mean_var = make_mlp([embedding_dim * 2, gconv_hidden_dim, embedding_dim * 2],
+                                       batch_norm=mlp_normalization)
+        self.angle_mean = make_mlp([embedding_dim * 2, angle_embedding_dim], batch_norm=mlp_normalization, norelu=True)
+        self.angle_var = make_mlp([embedding_dim * 2, angle_embedding_dim], batch_norm=mlp_normalization, norelu=True)        # graph conv net
+   
 
-    def encoder(self, objs, boxes_gt, angles_gt, attributes, obj_to_img):
+    def encoder(self, objs, boxes_gt, angles_gt, attributes, attention_mask):
         '''
         Get the score matrix for sampling distributions
         '''
@@ -401,15 +408,53 @@ class TransformerEncoder(nn.Module):
         obj_vecs = obj_vecs.unsqueeze(0) # [1xBxD] 
         
         # attention mask
-        obj_counts = [torch.sum(obj_to_img == i).item() for i in range(self.batch_size)]
-        block_list = [torch.ones((obj_counts[i],obj_counts[i])) for i in range(self.batch_size)]
-        attention_mask = torch.block_diag(*block_list).to(obj_vecs.device) # [BxB]
+        # obj_counts = [torch.sum(obj_to_img == i).item() for i in range(self.batch_size)]
+        # block_list = [torch.ones((obj_counts[i],obj_counts[i])) for i in range(self.batch_size)]
+        # attention_mask = torch.block_diag(*block_list).to(obj_vecs.device) # [BxB]
 
         # the attention mask is expand as [1 x 1 x B x B]
         bert_outputs = self.bert_encoder(obj_vecs, attention_mask=attention_mask[None,None,:,:])[0] # [1 x B x D]
 
-        subject_linear_output = self.subject_linear(bert_outputs) # [1 x B x D']
-        object_linear_output = self.object_linear(bert_outputs) # [1 x B x D']
+        return bert_outputs # [1 x B x D]
+
+    def get_hidden_representation(self, hidden_states):
+        obj_encodings = hidden_states.squeeze(0)
+        obj_vecs_box = self.box_mean_var(obj_encodings)
+        mu_box = self.box_mean(obj_vecs_box)
+        logvar_box = self.box_var(obj_vecs_box)
+
+        obj_vecs_angle = self.angle_mean_var(obj_encodings)
+        mu_angle = self.angle_mean(obj_vecs_angle)
+        logvar_angle = self.angle_var(obj_vecs_angle)
+        mu = torch.cat([mu_box, mu_angle], dim=1)
+        logvar = torch.cat([logvar_box, logvar_angle], dim=1)
+
+        return mu, logvar
+
+class GraphGenerator(nn.Module):
+    def __init__(self, vocab, embedding_dim=128, batch_size=32,
+                 train_3d=True,
+                 decoder_cat=False,
+                 Nangle=24,
+                 gconv_mode='feedforward',
+                 gconv_pooling='avg', gconv_num_layers=5,
+                 mlp_normalization='none',
+                 vec_noise_dim=0,
+                 layout_noise_dim=0,
+                 use_AE=False,
+                 use_attr=True):
+        super().__init__()
+        
+        # edge linker
+        self.subject_linear = make_mlp([2 * embedding_dim, embedding_dim])
+        self.object_linear = make_mlp([2 * embedding_dim, embedding_dim])
+
+    def get_score_matrix(self, hidden_states, attention_mask):
+        '''
+        Get the score matrix for linking edges from the output hidden states of the transformer
+        '''
+        subject_linear_output = self.subject_linear(hidden_states) # [1 x B x D']
+        object_linear_output = self.object_linear(hidden_states) # [1 x B x D']
 
         subject_linear_output = subject_linear_output.squeeze(0)
         object_linear_output = object_linear_output.squeeze(0)

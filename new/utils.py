@@ -58,9 +58,13 @@ def resolve_relative_positions(boxes_pred, triples, parent_relation_type_index =
 def obtain_sampled_relations(objects, sample_parents, boxes, vocab, add_parent_link = False):
     new_triples = []
     for i in range(sample_parents.size(0)):
-        # subject = objects[i]
+        subject = objects[i]
         parent_index = sample_parents[i]
         # parent = objects[parent_index]
+
+        if vocab["object_idx_to_name"][subject] == "__room__":
+            continue
+
         subject_box = boxes[i]
         parent_box = boxes[parent_index]
 
