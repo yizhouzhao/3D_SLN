@@ -444,6 +444,7 @@ class GraphGenerator(nn.Module):
                  use_AE=False,
                  use_attr=True):
         super().__init__()
+        self.batch_size = batch_size
         
         # edge linker
         self.subject_linear = make_mlp([2 * embedding_dim, embedding_dim])
@@ -464,13 +465,14 @@ class GraphGenerator(nn.Module):
 
         return score_matrix        
 
-    def sample(self, score_matrix, obj_to_img):
+    def sample(self, score_matrix, obj_to_img, get_entropy=True):
         '''
         Sample the indexes of obj parents from the score matrix
         '''
         offset = 0
         all_samples = []
         all_log_probs = []
+        all_entropy = []
 
         obj_counts = [torch.sum(obj_to_img == i).item() for i in range(self.batch_size)]
         for i in range(len(obj_counts)):
@@ -488,9 +490,15 @@ class GraphGenerator(nn.Module):
             all_samples.append(sample_block)
             all_log_probs.append(log_prob_block)
 
+            if get_entropy:
+                all_entropy.append(m_block.entropy())
+
             offset += block_size
 
         all_samples = torch.cat(all_samples, dim = 0)
         all_log_probs = torch.cat(all_log_probs, dim = 0)
+
+        if get_entropy:
+            all_entropy = torch.cat(all_entropy, dim = 0)
         
-        return all_samples, all_log_probs
+        return all_samples, all_log_probs, all_entropy

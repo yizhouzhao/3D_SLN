@@ -11,10 +11,12 @@ from tqdm.auto import tqdm
 import numpy as np
 
 from new.CustomVAE import *
-from new.utils import resolve_relative_positions
+from new.utils import resolve_relative_positions, obtain_sampled_relations
 from utils import calculate_model_losses
 from data.suncg_dataset import g_add_in_room_relation, g_use_heuristic_relation_matrix, \
     g_prepend_room, g_add_random_parent_link, g_shuffle_subject_object
+
+# from torch_scatter import scatter_mean
 
 # decoder option
 g_decoder_option = "original" #"rgcn"
@@ -27,6 +29,8 @@ if (args.output_dir is not None) and (not os.path.isdir(args.output_dir)):
 if (args.test_dir is not None) and (not os.path.isdir(args.test_dir)):
     os.mkdir(args.test_dir)
 
+# change embedding_dim for bert
+args.embedding_dim = 84 
 # has KL divergence loss
 args.use_AE = False
 
@@ -50,7 +54,6 @@ vocab, train_loader, val_loader = build_loaders(args)
 
 dt = train_loader.dataset
 
-args.embedding_dim = 84 # change embedding_dim for bert
 # model args
 kwargs = {
         'vocab': dt.vocab,
@@ -81,17 +84,22 @@ else:
 model_decoder = model_decoder.cuda()
 optimizer_decoder = torch.optim.Adam(model_decoder.parameters(), lr=args.learning_rate) 
 
+# load graph generator
+model_generator = GraphGenerator(**kwargs)
+model_generator = model_generator.cuda()
+optimizer_generator = torch.optim.Adam(model_generator.parameters(), lr=args.learning_rate) 
+
 t = 0 # total steps
 total_epochs = 5
 
 for epoch in range(total_epochs):
     print("Training epoch {}".format(epoch))
-    
     # training
     model_encoder.train()
     model_decoder.train()
     for batch in tqdm(train_loader):
         t += 1
+        # break
         ids, objs, boxes, triples, angles, attributes, obj_to_img, triple_to_img = tensor_aug(batch)
 
         # attention mask
@@ -113,40 +121,93 @@ for epoch in range(total_epochs):
             eps = torch.randn_like(std)
             z = eps.mul(std).add_(mu)
 
-        # decoder
-        boxes_pred, angles_pred = model_decoder.decoder(z, objs, triples, attributes)
-        
+        # KL weight
         if args.KL_linear_decay:
-            KL_weight = 10 ** (t // 1e5 - 6)
+                KL_weight = 10 ** (t // 1e5 - 6)
         else:
             KL_weight = args.KL_loss_weight
-        total_loss, losses = calculate_model_losses(args, None, boxes, boxes_pred, angles, angles_pred, mu=mu, logvar=logvar, KL_weight=KL_weight)
-        losses['total_loss'] = total_loss.item()
-        
-        if not math.isfinite(losses['total_loss']):
-            print('WARNING: Got loss = NaN, not backpropping')
-            #continue
-        
-        if g_relative_location:
-            boxes_pred = resolve_relative_positions(boxes_pred, triples, g_parent_link_index)
 
-        optimizer_encoder.zero_grad()
-        optimizer_decoder.zero_grad()
-        total_loss.backward()
-        optimizer_encoder.step()
-        optimizer_decoder.step()
+        train_type = "vae"
+        if np.random.randn() < 0.9:
+            train_rl = False
+            #train_type = "vae"
+        else:
+            train_rl = True
+            #train_type = "rl"
 
-        if t % args.print_every == 0:
-            print("On batch {} in epoch {}".format(t, epoch))
-            for name, val in losses.items():
-                print(' [%s]: %.4f' % (name, val))
-                writer.add_scalar('Loss/'+ name, val, t)
+        if train_type == "vae":
+            # decoder
+            boxes_pred, angles_pred = model_decoder.decoder(z, objs, triples, attributes)
+            total_loss, losses = calculate_model_losses(args, None, boxes, boxes_pred, angles, angles_pred, mu=mu, logvar=logvar, KL_weight=KL_weight)
+            losses['total_loss'] = total_loss.item()
+            
+            if not math.isfinite(losses['total_loss']):
+                print('WARNING: Got loss = NaN, not backpropping')
+                #continue
+            
+            if g_relative_location:
+                boxes_pred = resolve_relative_positions(boxes_pred, triples, g_parent_link_index)
+
+            optimizer_encoder.zero_grad()
+            optimizer_decoder.zero_grad()
+            total_loss.backward()
+            optimizer_encoder.step()
+            optimizer_decoder.step()
+
+            if t % args.print_every == 0:
+                print("On batch {} in epoch {}".format(t, epoch))
+                for name, val in losses.items():
+                    print(' [%s]: %.4f' % (name, val))
+                    writer.add_scalar('Loss/'+ name, val, t)
+        
+        if train_rl:
+            # calculate edges
+            score_matrix = model_generator.get_score_matrix(hidden_states, attention_mask)
+            all_samples, all_log_probs, all_entropy = model_generator.sample(score_matrix, obj_to_img)
+
+            # query new relation
+            new_triples = obtain_sampled_relations(objs, all_samples, boxes.cpu().data, dt.vocab)
+
+            # decoder
+            boxes_pred, angles_pred = model_decoder.decoder(z, objs, new_triples, attributes)
+
+            # loss
+            loss_bbox = F.l1_loss(boxes_pred, boxes, reduction = "none")
+            loss_bbox = torch.mean(loss_bbox, dim = 1)
+            #loss_bbox_per_batch = scatter_mean(loss_bbox, obj_to_img, dim = 0)
+
+            loss_angle = F.nll_loss(angles_pred, angles, reduction = "none")
+            #loss_angle_per_batch = scatter_mean(loss_angle, obj_to_img, dim = 0)
+
+            # calculate policy gradient
+            J = - torch.mean(all_log_probs * (loss_bbox.detach() + \
+                    args.rl_angle_loss_weight * loss_angle.detach()) + \
+                    args.entropy_alpha * all_entropy)
+
+            optimizer_generator.zero_grad()
+            J.backward()
+            optimizer_generator.step()
+
+            if t % args.print_every == 0:
+                print("On batch {} in epoch {} RL Part".format(t, epoch))
+                print(' [%s]: %.4f' % ("RL mean reward", J.item()))
+                writer.add_scalar('Loss/'+ "RL_mean_reward", J.item(), t)
+
+                # then calculate reconstruction loss
+                total_loss, losses = calculate_model_losses(args, None, boxes, boxes_pred, angles, angles_pred, mu=mu, logvar=logvar, KL_weight=KL_weight)
+                losses['total_loss'] = total_loss.item()
+                
+                for name, val in losses.items():
+                    print(' [%s]: %.4f' % (name, val))
+                    writer.add_scalar('Loss/RL_'+ name, val, t)
 
     # validation
     model_encoder.eval()
     model_decoder.eval()
     print("Validation epoch {}".format(epoch))
-    valid_loss_list = {"bbox_pred":[], "angle_pred": [],"total_loss":[], 'KLD_Gauss':[]}
+    valid_loss_list = {"bbox_pred":[], "angle_pred": [],"total_loss":[], 'KLD_Gauss':[],
+                        "rl_reward":[], "rl_angle_pred":[], "rl_box_pred":[]}
+
     for batch in tqdm(val_loader):       
         ids, objs, boxes, triples, angles, attributes, obj_to_img, triple_to_img = tensor_aug(batch)
         
@@ -185,10 +246,41 @@ for epoch in range(total_epochs):
         
         for name, val in losses.items():
             valid_loss_list[name].append(val)
+        
+        # RL part
+        # calculate edges
+        score_matrix = model_generator.get_score_matrix(hidden_states, attention_mask)
+        all_samples, all_log_probs, all_entropy = model_generator.sample(score_matrix, obj_to_img)
 
-        #valid_loss_list['total_loss'].append(total_loss.item())
+        # query new relation
+        new_triples = obtain_sampled_relations(objs, all_samples, boxes.cpu().data, dt.vocab)
+
+        # decoder
+        rl_boxes_pred, rl_angles_pred = model_decoder.decoder(z, objs, new_triples, attributes)
+
+        # loss
+        loss_bbox = F.l1_loss(boxes_pred, boxes, reduction = "none")
+        loss_bbox = torch.mean(loss_bbox, dim = 1)
+        #loss_bbox_per_batch = scatter_mean(loss_bbox, obj_to_img, dim = 0)
+
+        loss_angle = F.nll_loss(angles_pred, angles, reduction = "none")
+        #loss_angle_per_batch = scatter_mean(loss_angle, obj_to_img, dim = 0)
+
+        # calculate policy gradient
+        J = - torch.mean(all_log_probs * (loss_bbox.detach() + \
+                args.rl_angle_loss_weight * loss_angle.detach()) + \
+                args.entropy_alpha * all_entropy)
+        valid_loss_list["rl_reward"].append(J.item())
+
+        # then calculate reconstruction loss
+        rl_total_loss, rl_losses = calculate_model_losses(args, None, boxes, rl_boxes_pred, angles, rl_angles_pred, mu=mu, logvar=logvar, KL_weight=KL_weight)
+        valid_loss_list["rl_box_pred"].append(rl_losses['bbox_pred'])
+        valid_loss_list["rl_angle_pred"].append(rl_losses['angle_pred'])        
         
     for name, val_list in valid_loss_list.items():
         writer.add_scalar('Loss/Validation_'+ name, np.mean(val_list), epoch)
         print("Validation loss", name, np.mean(val_list))
-  
+    
+torch.save(model_encoder.state_dict(), "records/encoder_May24.pth")
+torch.save(model_decoder.state_dict(), "records/decoder_May24.pth")
+torch.save(model_generator.state_dict(), "records/model_generator_May24.pth")

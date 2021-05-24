@@ -32,6 +32,7 @@ args.use_AE = True
 
 # tensorboard
 writer = SummaryWriter()
+writer.add_text("args", str(args))
 
 writer.add_hparams({
     "experiment type": "Decoder only: original version of the decoder",

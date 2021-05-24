@@ -32,6 +32,7 @@ args.use_AE = False
 
 # tensorboard
 writer = SummaryWriter()
+writer.add_text("args", str(args))
 
 writer.add_hparams({
     "experiment type": "Original VAE: Original Encoder + Original Decoder",

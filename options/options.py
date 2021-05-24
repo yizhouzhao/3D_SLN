@@ -71,8 +71,10 @@ class Options():
         parser.add_argument('--gan_shade', action='store_true')
         parser.add_argument('--blender_path', default="/home/yizhou/blender-2.92.0-linux64/blender")
 
-
-
+        # new: rl
+        parser.add_argument('--entropy_alpha', default=0.1, type=float) # entropy weight in policy
+        parser.add_argument('--rl_angle_loss_weight', default=0.1, type=float) # angle loss weight in reinforcement learning
+        
     def parse(self):
         # initialize parser
         if not self.initialized:
