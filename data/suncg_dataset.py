@@ -61,7 +61,7 @@ def suncg_collate_fn(batch):
 
 
 class SuncgDataset(BaseDataset):
-    def __init__(self, data_dir, train_3d, touching_relations=True, use_attr_30=False):
+    def __init__(self, data_dir, valid_types_dir = "metadata/valid_types.json", train_3d=True, touching_relations=True, use_attr_30=False):
         super(Dataset, self).__init__()
         self.train_3d = train_3d
         assert self.train_3d
@@ -82,7 +82,7 @@ class SuncgDataset(BaseDataset):
         # obj_name is object type (chair/table/sofa etc. etc.)
         # pred_name is relation type (left/right etc.)
         # idx_to_name maps respective index back to object type or relation name
-        valid_types = load_json("metadata/valid_types.json")
+        valid_types = load_json(valid_types_dir)
         self.vocab = {'object_idx_to_name': ['__room__'] + valid_types}
 
         # map obj type to idx

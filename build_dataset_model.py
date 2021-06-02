@@ -9,6 +9,7 @@ def build_suncg_dsets(args):
         'data_dir': args.suncg_train_dir,
         'train_3d': args.train_3d,
         'use_attr_30': args.use_attr_30,
+        'valid_types_dir': args.valid_types_dir if args.valid_types_dir else "metadata/valid_types.json"
     }
     train_dset = SuncgDataset(**dset_kwargs)
     num_objs = train_dset.total_objects()

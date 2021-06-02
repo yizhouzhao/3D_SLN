@@ -27,6 +27,11 @@ if (args.output_dir is not None) and (not os.path.isdir(args.output_dir)):
 if (args.test_dir is not None) and (not os.path.isdir(args.test_dir)):
     os.mkdir(args.test_dir)
 
+# train path
+args.suncg_train_dir = '/home/yizhou/Research/3D-FRONT-ToolBox/metadata43DSLN/all_room_info.json'
+args.valid_types_dir = "/home/yizhou/Research/3D-FRONT-ToolBox/metadata43DSLN/valid_types.json"
+args.suncg_val_dir = '/home/yizhou/Research/3D-FRONT-ToolBox/metadata43DSLN/all_room_info.json'
+
 # has KL divergence loss
 args.use_AE = False
 
@@ -35,7 +40,7 @@ writer = SummaryWriter()
 writer.add_text("args", str(args))
 
 writer.add_hparams({
-    "experiment type": "Original VAE: Original Encoder + Original Decoder",
+    "experiment type": "Original VAE for 3d-front: Original Encoder + Original Decoder",
     "decoder type": g_decoder_option,
     "use relative location": g_relative_location,
     "Add 'in_room' relation": g_add_in_room_relation,
