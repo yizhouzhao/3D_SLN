@@ -29,7 +29,7 @@ def parse_sentence_into_spatial_relation(sentence:str):
     # step one: find PREP
     for token in doc:
         if token.dep_ == "prep":
-            if token.text in ["on","behind","beside","near"]:     
+            if token.text in ["on","behind","beside","near","at"]:     
                 relation_token = token
                 relation =  relation_token.text
                 case = 1
@@ -56,15 +56,17 @@ def parse_sentence_into_spatial_relation(sentence:str):
                         relation_token = token # from
                         case = 2
                     
-    #print("case:", case)
-    ## CASE ONE: object only (I prefer to have two shelfs.)
+    # print("case:", case)
+    ## CASE zero: object only (I prefer to have two shelfs.)
     if case == 0:
         relation = "in"
         object = "__room__"
         for token in doc:
-            if "obj" in token.dep_ or ("there" in sentence and token.pos_ == "NOUN"):
+            if "obj" in token.dep_ or ("there" in sentence and token.pos_ == "NOUN") \
+                or ("nsubj" in token.dep_ and ("necessary" in sentence or "for" in sentence)):
                 subject_token = token
                 subject = subject_token.text
+                break
 
     ## CASE ONE: s,p,o  (e.g.some flowers should be on the colorful sofa)
     elif case == 1:
@@ -78,7 +80,7 @@ def parse_sentence_into_spatial_relation(sentence:str):
         if subject_token.pos_ == "NOUN":
             subject = subject_token.text
         else:
-            if subject_token.text in ["are","is"]:
+            if subject_token.text in ["are","is", "be"]:
                 for child in subject_token.children:
                     if "subj" in child.dep_ or ("there" in sentence and "attr" in child.dep_):
                         subject = child.text

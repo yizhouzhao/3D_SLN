@@ -7,6 +7,7 @@ from torch.distributions import Categorical
 from models.graph import make_mlp, GraphTripleConvNet, _init_weights
 
 from torch_geometric.nn import RGCNConv
+from torch_scatter import scatter_mean
 
 from transformers import BertModel, BertConfig
 from transformers.models.bert.modeling_bert import BertEncoder, BertPooler
@@ -429,7 +430,22 @@ class TransformerEncoder(nn.Module):
         mu = torch.cat([mu_box, mu_angle], dim=1)
         logvar = torch.cat([logvar_box, logvar_angle], dim=1)
 
-        return mu, logvar
+        return mu, logvar # [B x H]
+
+    def get_global_hidden_representation(self, hidden_states, obj_to_img):
+        obj_encodings = hidden_states.squeeze(0)
+        pooled_encodings=  scatter_mean(obj_encodings,obj_to_img, dim = 0) # [args.batch x D]
+        obj_vecs_box = self.box_mean_var(pooled_encodings)
+        mu_box = self.box_mean(obj_vecs_box)
+        logvar_box = self.box_var(obj_vecs_box)
+
+        obj_vecs_angle = self.angle_mean_var(pooled_encodings)
+        mu_angle = self.angle_mean(obj_vecs_angle)
+        logvar_angle = self.angle_var(obj_vecs_angle)
+        mu = torch.cat([mu_box, mu_angle], dim=1)
+        logvar = torch.cat([logvar_box, logvar_angle], dim=1)
+
+        return mu, logvar # [args.batch x H]
 
 class GraphGenerator(nn.Module):
     def __init__(self, vocab, embedding_dim=128, batch_size=32,
